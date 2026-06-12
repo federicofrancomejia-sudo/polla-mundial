@@ -179,6 +179,37 @@ def ranking_view(user):
         st.metric(f"Tu posición ({user})", f"#{int(r['Puesto'])}", f"{int(r['Puntos'])} pts")
     st.dataframe(df, hide_index=True, width="stretch")
 
+    # --- Resultados de los partidos jugados ---
+    st.markdown("### 📋 Resultados")
+    rr_rows = [{"#": p["num"], "Partido": f"{p['local']} vs {p['visitante']}",
+                "Resultado": f"{res[p['num']][0]}-{res[p['num']][1]}"}
+               for p in PARTIDOS if p["num"] in res]
+    if rr_rows:
+        st.dataframe(pd.DataFrame(rr_rows), hide_index=True, width="stretch")
+    else:
+        st.caption("Aún no hay resultados cargados.")
+
+    # --- Mi detalle: resultado vs mi apuesta + puntos ---
+    st.markdown(f"### 🧾 Mi detalle — {user}")
+    mis = db.get_apuestas(user)
+    det = []
+    for p in PARTIDOS:
+        if p["num"] not in res:
+            continue
+        rr = res[p["num"]]
+        ap = mis.get(p["num"])
+        pt = puntos(ap, rr)
+        det.append({"Partido": f"{p['local']} vs {p['visitante']}",
+                    "Resultado": f"{rr[0]}-{rr[1]}",
+                    "Tu apuesta": f"{ap[0]}-{ap[1]}" if ap else "—",
+                    "Pts": pt if pt is not None else 0})
+    if det:
+        df_det = pd.DataFrame(det)
+        st.dataframe(df_det, hide_index=True, width="stretch")
+        st.caption(f"Total: {sum(d['Pts'] for d in det)} pts en {len(det)} partidos jugados.")
+    else:
+        st.caption("Cuando haya resultados, aquí verás tu apuesta vs el marcador real y tus puntos.")
+
 
 # ===== Generadores de mensajes (WhatsApp) =====
 def _bet(num, nombre, todas):
