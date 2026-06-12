@@ -10,17 +10,12 @@ import db
 from fixtures import PARTIDOS, TZ
 
 # ===== Configuración =====
-PARTICIPANTES = [
-    "Jaime Pinzon", "Angela Duran", "Federico Franco", "Yeison Garzon", "Martin Higuera",
-    "Rodrigo Garcia", "Carlos Vargas", "Pedro Artunduaga", "Andres Toro", "Alejandro Garzon",
-    "Armando Pineda", "Jhon Gomez", "Flavio Ortega", "Jairo Zambrano", "Felipe Carmona",
-    "Omar Duarte", "Jesus Muñoz", "Custodio Roa", "Fernando Gomez", "Veronica Capera",
-    "Oscar Muñoz", "Andres Torres", "Alejandra Rincon", "Wbeymar Torres", "Fredy Mogollon",
-]
+# Los participantes viven en la base de datos (no en el código), así el repo
+# queda sin datos personales. Se siembran al migrar desde el Excel.
 BOLSA_UNIT = 50000
 
 st.set_page_config(page_title="Polla Mundial 2026", page_icon="🏆", layout="centered")
-db.init_db(PARTICIPANTES)
+db.init_db([])  # asegura que existan las tablas (no siembra nombres)
 
 
 def now_co():
@@ -91,6 +86,9 @@ def apuestas_view(user):
     mis = db.get_apuestas(user)
     res = db.get_resultados()
 
+    if "msg_ok" in st.session_state:
+        st.success(st.session_state.pop("msg_ok"))
+
     contador()
     st.write("")
 
@@ -103,54 +101,48 @@ def apuestas_view(user):
         st.warning(f"⚠️ Te faltan por apostar HOY: {nombres}")
 
     st.subheader("⚽ Mis apuestas")
-    st.caption("Escribe los goles. Cada partido se cierra a su hora de inicio (hora Colombia).")
+    st.caption("Pon los goles y dale **Confirmar** en cada partido. Se cierra a su hora de inicio.")
 
     dias = sorted({p["kickoff"].date() for p in PARTIDOS})
-    with st.form("form_apuestas"):
-        for dia in dias:
-            ps = [p for p in PARTIDOS if p["kickoff"].date() == dia]
-            etiqueta = ps[0]["dia_txt"]
-            abierto_hoy = (dia == hoy)
-            with st.expander(f"📅 {etiqueta}  ({len(ps)} partidos)", expanded=abierto_hoy):
-                for p in ps:
-                    n = p["num"]
-                    cerrado = p["kickoff"] <= now
-                    pred = mis.get(n)
-                    st.markdown(f"**{p['local']} vs {p['visitante']}**  ·  {p['hora_txt']}")
-                    if cerrado:
-                        ap = f"{pred[0]}-{pred[1]}" if pred else "sin apuesta"
-                        rr = res.get(n)
-                        extra = ""
-                        if rr:
-                            pt = puntos(pred, rr)
-                            extra = f"  ·  resultado {rr[0]}-{rr[1]}  ·  **{pt if pt is not None else 0} pts**"
-                        st.caption(f"🔒 CERRADO — tu apuesta: {ap}{extra}")
-                    else:
+    for dia in dias:
+        ps = [p for p in PARTIDOS if p["kickoff"].date() == dia]
+        with st.expander(f"📅 {ps[0]['dia_txt']}  ({len(ps)} partidos)", expanded=(dia == hoy)):
+            for p in ps:
+                n = p["num"]
+                pred = mis.get(n)
+                if p["kickoff"] <= now:   # CERRADO
+                    ap = f"{pred[0]}-{pred[1]}" if pred else "sin apuesta"
+                    rr = res.get(n)
+                    extra = ""
+                    if rr:
+                        pt = puntos(pred, rr)
+                        extra = f"  ·  resultado {rr[0]}-{rr[1]}  ·  **{pt if pt is not None else 0} pts**"
+                    st.markdown(f"🔒 **{p['local']} vs {p['visitante']}** · {p['hora_txt']}")
+                    st.caption(f"CERRADO — tu apuesta: {ap}{extra}")
+                else:                     # ABIERTO -> mini formulario con Confirmar
+                    with st.form(f"f_{n}", border=True):
+                        st.markdown(f"**{p['local']} vs {p['visitante']}**  ·  {p['hora_txt']}")
+                        if pred:
+                            st.caption(f"✅ Confirmada: {pred[0]}-{pred[1]}  (puedes cambiarla)")
                         c1, c2 = st.columns(2)
-                        c1.number_input(p["local"], min_value=0, max_value=20, step=1,
-                                        value=(pred[0] if pred else None),
-                                        key=f"gl_{n}", placeholder="-")
-                        c2.number_input(p["visitante"], min_value=0, max_value=20, step=1,
-                                        value=(pred[1] if pred else None),
-                                        key=f"gv_{n}", placeholder="-")
-                    st.divider()
-        guardar = st.form_submit_button("💾 Guardar mis apuestas", type="primary",
-                                        width="stretch")
-
-    if guardar:
-        now2 = now_co()
-        n_ok = 0
-        for p in PARTIDOS:
-            n = p["num"]
-            if p["kickoff"] <= now2:
-                continue
-            gl = st.session_state.get(f"gl_{n}")
-            gv = st.session_state.get(f"gv_{n}")
-            if gl is not None and gv is not None:
-                db.set_apuesta(user, n, int(gl), int(gv))
-                n_ok += 1
-        st.success(f"✅ Guardado. {n_ok} partidos con apuesta.")
-        st.rerun()
+                        gl = c1.number_input(p["local"], min_value=0, max_value=20, step=1,
+                                             value=(pred[0] if pred else None),
+                                             key=f"gl_{n}", placeholder="-")
+                        gv = c2.number_input(p["visitante"], min_value=0, max_value=20, step=1,
+                                             value=(pred[1] if pred else None),
+                                             key=f"gv_{n}", placeholder="-")
+                        ok = st.form_submit_button("✅ Confirmar apuesta", type="primary",
+                                                   width="stretch")
+                    if ok:
+                        if p["kickoff"] <= now_co():
+                            st.error("⏰ Este partido ya cerró, no se puede confirmar.")
+                        elif gl is None or gv is None:
+                            st.warning("Pon los dos goles antes de confirmar.")
+                        else:
+                            db.set_apuesta(user, n, int(gl), int(gv))
+                            st.session_state["msg_ok"] = (
+                                f"✓ {p['local']} {int(gl)}-{int(gv)} {p['visitante']} — ¡apuesta confirmada!")
+                            st.rerun()
 
 
 # ===== Ranking =====
@@ -251,7 +243,7 @@ def main():
     user = st.session_state.user
     with st.sidebar:
         st.markdown(f"👤 **{user}**")
-        bolsa = BOLSA_UNIT * len(PARTICIPANTES)
+        bolsa = BOLSA_UNIT * len(db.lista_participantes())
         st.caption(f"Bolsa: ${bolsa:,.0f}".replace(",", "."))
         st.caption(f"🥇 ${bolsa*.5:,.0f} · 🥈 ${bolsa*.3:,.0f} · 🥉 ${bolsa*.2:,.0f}".replace(",", "."))
         if st.button("Cerrar sesión"):
