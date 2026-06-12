@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+polla.db
+.streamlit/secrets.toml
