@@ -180,12 +180,77 @@ def ranking_view(user):
     st.dataframe(df, hide_index=True, width="stretch")
 
 
+# ===== Generadores de mensajes (WhatsApp) =====
+def _bet(num, nombre, todas):
+    ap = todas.get(nombre, {}).get(num)
+    if ap and ap[0] is not None and ap[1] is not None:
+        return ap
+    return None
+
+
+def texto_apuestas(num):
+    p = PARTIDOS[num - 1]
+    todas = db.todas_apuestas()
+    con, faltan = [], []
+    for nombre in sorted(db.lista_participantes()):
+        ap = _bet(num, nombre, todas)
+        (con if ap else faltan).append((nombre, ap))
+    out = [f"⚽ APUESTAS — {p['local']} vs {p['visitante']} ({p['dia_txt']} {p['hora_txt']})", ""]
+    out += [f"• {n}: {a[0]}-{a[1]}" for n, a in con]
+    if faltan:
+        out += ["", "⏳ Faltan: " + ", ".join(n for n, _ in faltan)]
+    return "\n".join(out)
+
+
+def texto_pendientes(num):
+    p = PARTIDOS[num - 1]
+    todas = db.todas_apuestas()
+    faltan = [n for n in sorted(db.lista_participantes()) if not _bet(num, n, todas)]
+    if not faltan:
+        return f"✅ Todos apostaron {p['local']} vs {p['visitante']}."
+    out = [f"⏰ FALTAN por apostar {p['local']} vs {p['visitante']} (cierra {p['dia_txt']} {p['hora_txt']}):", ""]
+    out += [f"👉 {n}" for n in faltan]
+    return "\n".join(out)
+
+
+def texto_ganadores(num):
+    p = PARTIDOS[num - 1]
+    rr = db.get_resultados().get(num)
+    if not rr:
+        return "Aún no hay resultado cargado para este partido."
+    todas = db.todas_apuestas()
+    g = {3: [], 2: [], 1: [], 0: []}
+    for nombre in sorted(db.lista_participantes()):
+        pt = puntos(_bet(num, nombre, todas), rr)
+        if pt is not None:
+            g[pt].append(nombre)
+    out = [f"⚽ {p['local']} {rr[0]}-{rr[1]} {p['visitante']}", ""]
+    if g[3]:
+        out += ["🎯 3 pts (exacto): " + ", ".join(g[3])]
+    if g[2]:
+        out += ["✅ 2 pts (ganador): " + ", ".join(g[2])]
+    if g[1]:
+        out += ["➕ 1 pt (empate): " + ", ".join(g[1])]
+    if g[0]:
+        out += ["⚪ 0 pts: " + ", ".join(g[0])]
+    out += ["", "🏆 ACUMULADO"]
+    for f in calcular_ranking():
+        out.append(f"{f['Puesto']}. {f['Participante']} — {f['Puntos']} pts")
+    return "\n".join(out)
+
+
+def _label(num):
+    p = PARTIDOS[num - 1]
+    return f"P{num} · {p['local']} vs {p['visitante']} ({p['dia_txt']} {p['hora_txt']})"
+
+
 # ===== Admin =====
 def admin_view():
     st.subheader("🛠️ Panel de administrador")
     res = db.get_resultados()
-    tab1, tab2 = st.tabs(["Cargar resultados", "Control"])
+    tab1, tab2, tab3 = st.tabs(["📥 Resultados", "💬 Mensajes", "👥 Faltantes"])
 
+    # --- Cargar resultados ---
     with tab1:
         st.caption("Escribe los goles reales y guarda. El ranking se actualiza solo.")
         dias = sorted({p["kickoff"].date() for p in PARTIDOS})
@@ -204,8 +269,7 @@ def admin_view():
                         c2.number_input(p["visitante"], min_value=0, max_value=20, step=1,
                                         value=(rr[1] if rr else None), key=f"rgv_{n}",
                                         placeholder="-")
-            g = st.form_submit_button("💾 Guardar resultados", type="primary",
-                                      use_container_width=True)
+            g = st.form_submit_button("💾 Guardar resultados", type="primary", width="stretch")
         if g:
             for p in PARTIDOS:
                 n = p["num"]
@@ -216,14 +280,38 @@ def admin_view():
             st.success("✅ Resultados guardados.")
             st.rerun()
 
+    # --- Mensajes para WhatsApp ---
     with tab2:
-        pins = db.con_pin()
+        st.caption("Elige un partido y copia el mensaje (botón de copiar arriba a la derecha de cada cuadro).")
+        prox = proximo_partido(now_co())
+        idx = (prox["num"] - 1) if prox else 0
+        num = st.selectbox("Partido", [p["num"] for p in PARTIDOS],
+                           index=idx, format_func=_label, key="msg_num")
+        st.markdown("**📋 Apuestas del partido**")
+        st.code(texto_apuestas(num), language=None)
+        st.markdown("**⏰ Pendientes por cargar**")
+        st.code(texto_pendientes(num), language=None)
+        st.markdown("**🏆 Ganadores + Acumulado**")
+        st.code(texto_ganadores(num), language=None)
+
+    # --- Faltantes & control ---
+    with tab3:
+        prox = proximo_partido(now_co())
+        idx = (prox["num"] - 1) if prox else 0
+        num = st.selectbox("¿Quiénes faltan en el partido...?", [p["num"] for p in PARTIDOS],
+                           index=idx, format_func=_label, key="falt_num")
         todas = db.todas_apuestas()
-        filas = []
-        for nombre in db.lista_participantes():
-            filas.append({"Participante": nombre,
-                          "¿PIN?": "Sí" if pins.get(nombre) else "No",
-                          "Apostados": len(todas.get(nombre, {}))})
+        faltan = [n for n in sorted(db.lista_participantes()) if not _bet(num, n, todas)]
+        if faltan:
+            st.warning(f"Faltan {len(faltan)} por apostar este partido:")
+            st.write("  •  ".join(faltan))
+        else:
+            st.success("✅ Todos apostaron este partido.")
+        st.divider()
+        st.markdown("**Control general** (PIN creado y total de apuestas)")
+        pins = db.con_pin()
+        filas = [{"Participante": n, "¿PIN?": "Sí" if pins.get(n) else "No",
+                  "Apostados": len(todas.get(n, {}))} for n in db.lista_participantes()]
         st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch")
         st.caption("Resetear PIN de alguien que lo olvidó:")
         quien = st.selectbox("Participante", db.lista_participantes(), key="reset_sel")
