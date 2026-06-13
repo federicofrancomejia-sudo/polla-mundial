@@ -70,16 +70,21 @@ def mapear(api_json):
     return out
 
 
-def main():
-    key = os.environ.get("API_KEY")
-    if not key:
-        print("Falta API_KEY"); return
-    r = requests.get(API_URL, headers={"X-Auth-Token": key}, timeout=30)
+def actualizar(api_key):
+    """Trae los resultados de la API y los escribe en la base. Devuelve cuantos."""
+    r = requests.get(API_URL, headers={"X-Auth-Token": api_key}, timeout=30)
     r.raise_for_status()
     encontrados = mapear(r.json())
     for num, gh, ga in encontrados:
         db.set_resultado(num, gh, ga)
-    print(f"Resultados actualizados: {len(encontrados)}")
+    return len(encontrados)
+
+
+def main():
+    key = os.environ.get("API_KEY")
+    if not key:
+        print("Falta API_KEY"); return
+    print(f"Resultados actualizados: {actualizar(key)}")
 
 
 if __name__ == "__main__":
