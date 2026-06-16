@@ -211,6 +211,39 @@ def ranking_view(user):
         st.caption("Cuando haya resultados, aquí verás tu apuesta vs el marcador real y tus puntos.")
 
 
+# ===== Apuestas de todos (público — transparencia) =====
+def apuestas_todos_view():
+    st.subheader("👀 Apuestas de todos")
+    st.caption("Mira lo que va apostando cada quien, partido por partido. Total transparencia.")
+    prox = proximo_partido(now_co())
+    idx = (prox["num"] - 1) if prox else 0
+    num = st.selectbox("Partido", [p["num"] for p in PARTIDOS],
+                       index=idx, format_func=_label, key="todos_num")
+    p = PARTIDOS[num - 1]
+    res = db.get_resultados().get(num)
+    if p["kickoff"] <= now_co():
+        estado = "🔒 CERRADO"
+    else:
+        estado = f"🟢 ABIERTO — cierra {p['dia_txt']} {p['hora_txt']}"
+    if res:
+        estado += f"  ·  resultado {res[0]}-{res[1]}"
+    st.markdown(f"**{p['local']} vs {p['visitante']}** — {estado}")
+
+    todas = db.todas_apuestas()
+    filas = []
+    for nombre in sorted(db.lista_participantes()):
+        ap = _bet(num, nombre, todas)
+        fila = {"Participante": nombre,
+                "Apuesta": f"{ap[0]}-{ap[1]}" if ap else "⏳ pendiente"}
+        if res:
+            pt = puntos(ap, res)
+            fila["Pts"] = pt if pt is not None else 0
+        filas.append(fila)
+    apostaron = sum(1 for f in filas if f["Apuesta"] != "⏳ pendiente")
+    st.caption(f"Apostaron {apostaron} de {len(filas)}.")
+    st.dataframe(pd.DataFrame(filas), hide_index=True, width="stretch")
+
+
 # ===== Generadores de mensajes (WhatsApp) =====
 def _bet(num, nombre, todas):
     ap = todas.get(nombre, {}).get(num)
@@ -279,7 +312,8 @@ def _label(num):
 def admin_view():
     st.subheader("🛠️ Panel de administrador")
     res = db.get_resultados()
-    tab1, tab2, tab3 = st.tabs(["📥 Resultados", "💬 Mensajes", "👥 Faltantes"])
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["📥 Resultados", "💬 Mensajes", "👥 Faltantes", "🧑‍🤝‍🧑 Personas"])
 
     # --- Cargar resultados ---
     with tab1:
@@ -362,6 +396,29 @@ def admin_view():
             db.reset_pin(quien)
             st.success(f"PIN de {quien} reseteado. Creará uno nuevo en su próximo ingreso.")
 
+    # --- Agregar / quitar personas ---
+    with tab4:
+        st.markdown("**➕ Agregar persona**")
+        with st.form("add_pers", clear_on_submit=True):
+            nuevo = st.text_input("Nombre y apellido", placeholder="Ej: Pedro Pérez")
+            if st.form_submit_button("Agregar", type="primary"):
+                ok, msg = db.agregar_participante(nuevo)
+                (st.success if ok else st.error)(msg)
+        st.divider()
+        st.markdown("**🗑️ Quitar persona** (borra también todas sus apuestas)")
+        candidatos = [n for n in db.lista_participantes() if not db.es_admin(n)]
+        if candidatos:
+            quitar = st.selectbox("Persona a quitar", candidatos, key="del_sel")
+            conf = st.checkbox(f"Sí, quitar a {quitar} y todas sus apuestas", key="del_conf")
+            if st.button("Quitar definitivamente", type="primary", disabled=not conf):
+                ok, msg = db.eliminar_participante(quitar)
+                (st.success if ok else st.error)(msg)
+                st.rerun()
+        else:
+            st.caption("No hay personas para quitar.")
+        st.divider()
+        st.caption(f"Total participantes: {len(db.lista_participantes())}")
+
 
 # ===== Main =====
 def main():
@@ -381,7 +438,7 @@ def main():
             st.session_state.user = None
             st.rerun()
 
-    tabs = ["⚽ Apuestas", "📊 Ranking"]
+    tabs = ["⚽ Apuestas", "📊 Ranking", "👀 Apuestas de todos"]
     if db.es_admin(user):
         tabs.append("🛠️ Admin")
     sel = st.tabs(tabs)
@@ -389,8 +446,10 @@ def main():
         apuestas_view(user)
     with sel[1]:
         ranking_view(user)
+    with sel[2]:
+        apuestas_todos_view()
     if db.es_admin(user):
-        with sel[2]:
+        with sel[3]:
             admin_view()
 
 

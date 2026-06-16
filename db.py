@@ -53,6 +53,35 @@ def es_admin(nombre):
     return nombre in ADMINS
 
 
+def agregar_participante(nombre):
+    """Agrega una persona a la polla. Devuelve (ok, mensaje)."""
+    nombre = str(nombre).strip()
+    if not nombre:
+        return False, "Escribe un nombre."
+    with engine.begin() as cx:
+        existe = cx.execute(text("SELECT 1 FROM participantes WHERE nombre=:n"),
+                            {"n": nombre}).first()
+        if existe:
+            return False, f"'{nombre}' ya está en la lista."
+        cx.execute(text("INSERT INTO participantes(nombre) VALUES(:n)"), {"n": nombre})
+    return True, f"'{nombre}' agregado. Creará su PIN en su primer ingreso."
+
+
+def eliminar_participante(nombre):
+    """Quita a una persona y todas sus apuestas. Devuelve (ok, mensaje)."""
+    nombre = str(nombre).strip()
+    if nombre in ADMINS:
+        return False, "No puedes quitar a un administrador."
+    with engine.begin() as cx:
+        existe = cx.execute(text("SELECT 1 FROM participantes WHERE nombre=:n"),
+                            {"n": nombre}).first()
+        if not existe:
+            return False, f"'{nombre}' no está en la lista."
+        cx.execute(text("DELETE FROM apuestas WHERE nombre=:n"), {"n": nombre})
+        cx.execute(text("DELETE FROM participantes WHERE nombre=:n"), {"n": nombre})
+    return True, f"'{nombre}' eliminado junto con sus apuestas."
+
+
 def login(nombre, pin):
     """Primer ingreso fija el PIN; luego lo valida. Devuelve (ok, mensaje)."""
     pin = str(pin).strip()
