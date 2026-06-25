@@ -26,6 +26,8 @@ ENG = {
     "korea republic": "Corea del Sur", "south korea": "Corea del Sur",
     "czechia": "República Checa", "czech republic": "República Checa",
     "canada": "Canadá", "bosnia and herzegovina": "Bosnia", "bosnia herzegovina": "Bosnia",
+    # norm() borra el guion de "Bosnia-Herzegovina" y lo deja pegado -> "bosniaherzegovina"
+    "bosniaherzegovina": "Bosnia",
     "bosnia": "Bosnia", "united states": "Estados Unidos", "usa": "Estados Unidos",
     "paraguay": "Paraguay", "qatar": "Catar", "switzerland": "Suiza", "brazil": "Brasil",
     "morocco": "Marruecos", "haiti": "Haití", "scotland": "Escocia", "australia": "Australia",
@@ -33,6 +35,7 @@ ENG = {
     "netherlands": "Países Bajos", "japan": "Japón", "cote divoire": "Costa de Marfil",
     "ivory coast": "Costa de Marfil", "ecuador": "Ecuador", "sweden": "Suecia",
     "tunisia": "Túnez", "spain": "España", "cape verde": "Cabo Verde", "cabo verde": "Cabo Verde",
+    "cape verde islands": "Cabo Verde", "cabo verde islands": "Cabo Verde",
     "belgium": "Bélgica", "egypt": "Egipto", "saudi arabia": "Arabia Saudita", "uruguay": "Uruguay",
     "iran": "Irán", "ir iran": "Irán", "new zealand": "Nueva Zelanda", "france": "Francia",
     "senegal": "Senegal", "iraq": "Irak", "norway": "Noruega", "argentina": "Argentina",
