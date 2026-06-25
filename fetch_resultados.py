@@ -51,32 +51,52 @@ def a_nuestro(nombre_api):
 
 
 def mapear(api_json):
-    """Devuelve [(num_partido, gl, gv)] para los partidos FINALIZADOS que mapean."""
-    out = []
+    """Devuelve (mapeados, no_mapeados) para los partidos FINALIZADOS.
+    mapeados = [(num_partido, gl, gv)] cruzados en CUALQUIER orden (si la API trae
+      el local/visitante invertido, se intercambian los goles a nuestro orden).
+    no_mapeados = [texto] de los FINISHED que no se pudieron cruzar, para diagnostico
+      en el log (nombres crudos de la API)."""
+    out, no_map = [], []
     for m in api_json.get("matches", []):
         if m.get("status") != "FINISHED":
             continue
         ft = (m.get("score") or {}).get("fullTime") or {}
         gh, ga = ft.get("home"), ft.get("away")
+        raw_h = (m.get("homeTeam") or {}).get("name")
+        raw_a = (m.get("awayTeam") or {}).get("name")
         if gh is None or ga is None:
+            no_map.append(f"{raw_h} vs {raw_a}: FINISHED sin marcador")
             continue
-        h = a_nuestro((m.get("homeTeam") or {}).get("name"))
-        a = a_nuestro((m.get("awayTeam") or {}).get("name"))
+        h = a_nuestro(raw_h)
+        a = a_nuestro(raw_a)
         if not h or not a:
+            falta = raw_h if not h else raw_a
+            no_map.append(f"{raw_h} {gh}-{ga} {raw_a}: nombre sin traducir ('{falta}')")
             continue
         num = FIX.get((norm(h), norm(a)))
         if num:
             out.append((num, int(gh), int(ga)))
-    return out
+            continue
+        # la API a veces trae el local/visitante al reves -> probar orden invertido
+        num = FIX.get((norm(a), norm(h)))
+        if num:
+            out.append((num, int(ga), int(gh)))  # goles intercambiados a nuestro orden
+            continue
+        no_map.append(f"{h} {gh}-{ga} {a}: no esta en el fixture (en ningun orden)")
+    return out, no_map
 
 
 def actualizar(api_key):
     """Trae los resultados de la API y los escribe en la base. Devuelve cuantos."""
     r = requests.get(API_URL, headers={"X-Auth-Token": api_key}, timeout=30)
     r.raise_for_status()
-    encontrados = mapear(r.json())
+    encontrados, no_map = mapear(r.json())
     for num, gh, ga in encontrados:
         db.set_resultado(num, gh, ga)
+    if no_map:
+        print(f"FINISHED que no se pudieron mapear ({len(no_map)}):")
+        for t in no_map:
+            print("  -", t)
     return len(encontrados)
 
 
