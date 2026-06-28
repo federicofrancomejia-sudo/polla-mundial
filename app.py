@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 import db
-from fixtures import PARTIDOS, TZ
+from fixtures import PARTIDOS, TZ, por_num
 
 # ===== Configuración =====
 # Los participantes viven en la base de datos (no en el código), así el repo
@@ -219,7 +219,7 @@ def apuestas_todos_view():
     idx = (prox["num"] - 1) if prox else 0
     num = st.selectbox("Partido", [p["num"] for p in PARTIDOS],
                        index=idx, format_func=_label, key="todos_num")
-    p = PARTIDOS[num - 1]
+    p = por_num(num)
     res = db.get_resultados().get(num)
     if p["kickoff"] <= now_co():
         estado = "🔒 CERRADO"
@@ -253,7 +253,7 @@ def _bet(num, nombre, todas):
 
 
 def texto_apuestas(num):
-    p = PARTIDOS[num - 1]
+    p = por_num(num)
     todas = db.todas_apuestas()
     con, faltan = [], []
     for nombre in sorted(db.lista_participantes()):
@@ -267,7 +267,7 @@ def texto_apuestas(num):
 
 
 def texto_pendientes(num):
-    p = PARTIDOS[num - 1]
+    p = por_num(num)
     todas = db.todas_apuestas()
     faltan = [n for n in sorted(db.lista_participantes()) if not _bet(num, n, todas)]
     if not faltan:
@@ -278,7 +278,7 @@ def texto_pendientes(num):
 
 
 def texto_ganadores(num):
-    p = PARTIDOS[num - 1]
+    p = por_num(num)
     rr = db.get_resultados().get(num)
     if not rr:
         return "Aún no hay resultado cargado para este partido."
@@ -304,7 +304,7 @@ def texto_ganadores(num):
 
 
 def _label(num):
-    p = PARTIDOS[num - 1]
+    p = por_num(num)
     return f"P{num} · {p['local']} vs {p['visitante']} ({p['dia_txt']} {p['hora_txt']})"
 
 

@@ -21,7 +21,12 @@ DATABASE_URL = _cfg("DATABASE_URL", "sqlite:///polla.db")
 SALT = _cfg("PIN_SALT", "polla-mundial-2026")
 ADMINS = [a.strip() for a in str(_cfg("ADMINS", "Federico Franco")).split(";") if a.strip()]
 
-_connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+if DATABASE_URL.startswith("sqlite"):
+    _connect_args = {"check_same_thread": False}
+else:
+    # connect_timeout evita que la app/los scripts se queden colgados si el
+    # pooler no responde (en vez de esperar indefinidamente).
+    _connect_args = {"connect_timeout": 10}
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, connect_args=_connect_args)
 
 
@@ -38,6 +43,12 @@ def init_db(nombres):
             PRIMARY KEY(nombre, partido))"""))
         cx.execute(text("""CREATE TABLE IF NOT EXISTS resultados(
             partido INTEGER PRIMARY KEY, gl INTEGER, gv INTEGER)"""))
+        # Partidos de ELIMINATORIA (num >= 73). Los de fase de grupos (1-72)
+        # viven estaticos en fixtures.py; estos se llenan solos desde la API
+        # (fetch_partidos.py). api_id es el id estable del partido en la API.
+        cx.execute(text("""CREATE TABLE IF NOT EXISTS partidos(
+            num INTEGER PRIMARY KEY, api_id TEXT UNIQUE, etapa TEXT,
+            local TEXT, visitante TEXT, ciudad TEXT, kickoff TEXT)"""))
         for n in nombres:
             cx.execute(text("INSERT INTO participantes(nombre) VALUES(:n) "
                             "ON CONFLICT(nombre) DO NOTHING"), {"n": n})
@@ -153,3 +164,41 @@ def con_pin():
         rows = cx.execute(text("SELECT nombre, CASE WHEN pin IS NULL THEN 0 ELSE 1 END "
                                "FROM participantes")).all()
     return {r[0]: bool(r[1]) for r in rows}
+
+
+# ===== Partidos de eliminatoria (num >= 73, llenados desde la API) =====
+def partidos_eliminatoria():
+    """Filas crudas de los partidos de eliminatoria, ordenadas por num.
+    Devuelve [{num, etapa, local, visitante, ciudad, kickoff}]. fixtures.py les
+    da formato (kickoff -> datetime, dia_txt, hora_txt) y los une a los de grupos."""
+    with engine.connect() as cx:
+        rows = cx.execute(text("SELECT num, etapa, local, visitante, ciudad, kickoff "
+                               "FROM partidos WHERE num >= 73 ORDER BY num")).all()
+    return [{"num": r[0], "etapa": r[1], "local": r[2], "visitante": r[3],
+             "ciudad": r[4], "kickoff": r[5]} for r in rows]
+
+
+def num_de_api(api_id):
+    """Devuelve el num asignado a un api_id, o None si es nuevo."""
+    with engine.connect() as cx:
+        row = cx.execute(text("SELECT num FROM partidos WHERE api_id=:a"),
+                         {"a": str(api_id)}).first()
+    return row[0] if row else None
+
+
+def siguiente_num_partido():
+    """Proximo num libre para un partido de eliminatoria (empieza en 73)."""
+    with engine.connect() as cx:
+        mx = cx.execute(text("SELECT MAX(num) FROM partidos")).scalar()
+    return max(72, mx or 72) + 1
+
+
+def upsert_partido(num, api_id, etapa, local, visitante, ciudad, kickoff):
+    """Crea/actualiza un partido de eliminatoria (por num)."""
+    with engine.begin() as cx:
+        cx.execute(text("""INSERT INTO partidos(num, api_id, etapa, local, visitante, ciudad, kickoff)
+            VALUES(:num,:api,:et,:loc,:vis,:ciu,:ko)
+            ON CONFLICT(num) DO UPDATE SET
+              api_id=:api, etapa=:et, local=:loc, visitante=:vis, ciudad=:ciu, kickoff=:ko"""),
+            {"num": num, "api": str(api_id), "et": etapa, "loc": local,
+             "vis": visitante, "ciu": ciudad, "ko": kickoff})

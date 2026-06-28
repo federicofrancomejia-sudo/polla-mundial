@@ -14,7 +14,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: python fetch_resultados.py
+      - name: Sincronizar partidos de eliminatoria
+        run: python fetch_partidos.py
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Actualizar resultados
+        run: python fetch_resultados.py
         env:
           API_KEY: ${{ secrets.API_KEY }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

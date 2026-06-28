@@ -83,20 +83,57 @@ _RAW = [
 ]
 
 DIAS = {0: "lun", 1: "mar", 2: "mié", 3: "jue", 4: "vie", 5: "sáb", 6: "dom"}
+MESES = {5: "may", 6: "jun", 7: "jul", 8: "ago"}
 
-PARTIDOS = []
-for i, (j, g, d, h, m, loc, vis, ciu) in enumerate(_RAW, start=1):
-    ko = datetime(2026, 6, d, h, m, tzinfo=TZ)
-    PARTIDOS.append({
-        "num": i, "jornada": j, "grupo": g, "local": loc, "visitante": vis,
-        "ciudad": ciu, "kickoff": ko,
-        "dia_txt": f"{DIAS[ko.weekday()]} {d:02d}-jun",
+
+def _dict_partido(num, jornada, grupo, local, visitante, ciudad, ko):
+    """Arma el dict de un partido a partir de su kickoff (datetime con tz)."""
+    return {
+        "num": num, "jornada": jornada, "grupo": grupo, "local": local,
+        "visitante": visitante, "ciudad": ciudad, "kickoff": ko,
+        "dia_txt": f"{DIAS[ko.weekday()]} {ko.day:02d}-{MESES.get(ko.month, ko.strftime('%m'))}",
         "hora_txt": ko.strftime("%I:%M %p").lstrip("0").lower()
                       .replace("am", "a.m.").replace("pm", "p.m."),
-    })
+    }
 
-assert len(PARTIDOS) == 72
+
+# Fase de grupos (1-72): estatica.
+PARTIDOS_GRUPOS = []
+for i, (j, g, d, h, m, loc, vis, ciu) in enumerate(_RAW, start=1):
+    ko = datetime(2026, 6, d, h, m, tzinfo=TZ)
+    PARTIDOS_GRUPOS.append(_dict_partido(i, j, g, loc, vis, ciu, ko))
+
+assert len(PARTIDOS_GRUPOS) == 72
+
+
+def _cargar_eliminatorias():
+    """Lee de la BD los partidos de eliminatoria (num>=73) y los formatea.
+    Best-effort: ante CUALQUIER fallo (BD caida, tabla inexistente, etc.) devuelve
+    [] para que la app siga funcionando solo con la fase de grupos. Sin regresion."""
+    try:
+        import db
+        out = []
+        for r in db.partidos_eliminatoria():
+            ko = datetime.fromisoformat(str(r["kickoff"]).replace("Z", "+00:00")).astimezone(TZ)
+            out.append(_dict_partido(r["num"], r.get("etapa") or "Eliminatoria", "",
+                                     r["local"], r["visitante"], r.get("ciudad") or "", ko))
+        return out
+    except Exception:
+        return []
+
+
+# Lista completa = grupos + eliminatorias (ordenada por num para que num-1 sea el indice).
+PARTIDOS = sorted(PARTIDOS_GRUPOS + _cargar_eliminatorias(), key=lambda p: p["num"])
+_POR_NUM = {p["num"]: p for p in PARTIDOS}
 
 
 def por_num(n):
-    return PARTIDOS[n - 1]
+    return _POR_NUM.get(n)
+
+
+def recargar():
+    """Reconstruye PARTIDOS desde la BD (para llamar tras una sync de partidos)."""
+    global PARTIDOS, _POR_NUM
+    PARTIDOS = sorted(PARTIDOS_GRUPOS + _cargar_eliminatorias(), key=lambda p: p["num"])
+    _POR_NUM = {p["num"]: p for p in PARTIDOS}
+    return PARTIDOS
