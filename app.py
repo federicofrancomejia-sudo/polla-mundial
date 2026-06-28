@@ -331,15 +331,20 @@ def admin_view():
 
     # --- Cargar resultados ---
     with tab1:
-        if st.button("🔄 Actualizar resultados ahora (desde la API)", type="primary", width="stretch"):
+        if st.button("🔄 Actualizar partidos y resultados ahora (desde la API)", type="primary", width="stretch"):
             key = st.secrets["API_KEY"] if "API_KEY" in st.secrets else None
             if not key:
                 st.error("Falta API_KEY en los Secrets de la app (Settings → Secrets).")
             else:
                 try:
+                    import fetch_partidos
                     import fetch_resultados
-                    n = fetch_resultados.actualizar(key)
-                    st.success(f"✅ Listo: {n} partidos traídos/actualizados desde la API.")
+                    nv, ac = fetch_partidos.actualizar(key)   # 1) eliminatorias
+                    fixtures.recargar()                        # que aparezcan ya
+                    _refrescar_calendario.clear()              # invalida el cache de 10 min
+                    n = fetch_resultados.actualizar(key)       # 2) resultados
+                    st.success(f"✅ Eliminatoria: {nv} nuevos, {ac} actualizados · "
+                               f"Resultados: {n} traídos/actualizados.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"No se pudo actualizar: {e}")
