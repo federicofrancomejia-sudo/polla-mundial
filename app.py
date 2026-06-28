@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Polla Mundial 2026 - App web (Streamlit). Mobile-friendly."""
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -7,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 import db
+import fixtures
 from fixtures import PARTIDOS, TZ, por_num
 
 # ===== Configuración =====
@@ -16,6 +18,18 @@ BOLSA_UNIT = 50000
 
 st.set_page_config(page_title="Polla Mundial 2026", page_icon="🏆", layout="centered")
 db.init_db([])  # asegura que existan las tablas (no siembra nombres)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _refrescar_calendario(_ventana):
+    """Cada ~10 min relee de la BD los partidos de eliminatoria que haya agregado
+    fetch_partidos.py, sin necesidad de reiniciar el worker ni redesplegar.
+    Muta PARTIDOS en sitio; cacheado por ventana de 10 min para no golpear la BD."""
+    fixtures.recargar()
+    return _ventana
+
+
+_refrescar_calendario(int(time.time() // 600))
 
 
 def now_co():

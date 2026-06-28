@@ -132,8 +132,11 @@ def por_num(n):
 
 
 def recargar():
-    """Reconstruye PARTIDOS desde la BD (para llamar tras una sync de partidos)."""
-    global PARTIDOS, _POR_NUM
-    PARTIDOS = sorted(PARTIDOS_GRUPOS + _cargar_eliminatorias(), key=lambda p: p["num"])
-    _POR_NUM = {p["num"]: p for p in PARTIDOS}
+    """Reconstruye PARTIDOS desde la BD (para llamar tras una sync de partidos).
+    MUTA la lista y el dict EN SITIO (no los reasigna) para que quienes ya hicieron
+    `from fixtures import PARTIDOS` vean los partidos nuevos sin reimportar."""
+    nuevos = sorted(PARTIDOS_GRUPOS + _cargar_eliminatorias(), key=lambda p: p["num"])
+    PARTIDOS[:] = nuevos
+    _POR_NUM.clear()
+    _POR_NUM.update({p["num"]: p for p in PARTIDOS})
     return PARTIDOS
