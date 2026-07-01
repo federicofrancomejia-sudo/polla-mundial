@@ -63,8 +63,15 @@ def mapear(api_json):
     for m in api_json.get("matches", []):
         if m.get("status") != "FINISHED":
             continue
-        ft = (m.get("score") or {}).get("fullTime") or {}
-        gh, ga = ft.get("home"), ft.get("away")
+        # REGLA DE LA POLLA: cuenta el marcador a los 90 MINUTOS (sin prorroga ni
+        # penales). La API expone score.regularTime (goles a los 90') cuando hubo
+        # tiempo extra/penales; en partidos normales no existe y fullTime YA es el
+        # resultado de los 90'. OJO: fullTime incluye prorroga y penales (p.ej. un
+        # partido a penales sale 7-6), por eso NO se usa para eliminatorias.
+        score = m.get("score") or {}
+        rt = score.get("regularTime") or {}
+        node = rt if rt.get("home") is not None else (score.get("fullTime") or {})
+        gh, ga = node.get("home"), node.get("away")
         raw_h = (m.get("homeTeam") or {}).get("name")
         raw_a = (m.get("awayTeam") or {}).get("name")
         if gh is None or ga is None:
